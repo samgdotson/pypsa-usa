@@ -20,13 +20,18 @@ $ git clone git@github.com:PyPSA/pypsa-usa.git
 
 ## Step 2. Initialize Configuration files
 
-From the command line, run the script `init_pypsa_usa.sh` to copy configuration file
-templates into the `workflow/config` folder.
+From the command line, run the script `init_pypsa_usa.sh` (Linux/MacOS) or `init_pypsa_usa.sh` (Windows) to copy configuration file templates into the `workflow/config` folder.
+
+### Windows
+```bash
+pypsa-usa> init_pypsa_usa.bat
+```
+
+### Linux/MacOS
 
 ```bash
 $ bash init_pypsa_usa.sh
 ```
-
 ## Step 3: Create Conda Environment
 
 PyPSA-USA uses conda/mamba to manage project dependencies. You can download and install mamba following the [instructions](https://mamba.readthedocs.io/en/latest/mamba-installation.html). Follow links for mambaforge installation. There are two ways to install mamba, the first (recommended) method will start with a fresh install, meaning if you have previously installed conda environments, you will need to recreate these conda envs. If you already have conda installed and do not wish to install mamba, you can follow the same set of instructions replacing any `mamba` with `conda`
