@@ -480,7 +480,14 @@ class ReadEfs(ReadStrategy):
 
 
 class ReadEer(ReadStrategy):
-    """Reads state-level EER electricity demand profiles."""
+    """Reads state-level EER electricity demand profiles.
+
+    EER publishes profiles for ``MODEL_YEARS`` only. A planning horizon between
+    two model years is built from them: each state's annual total is linearly
+    interpolated between the bracketing model years, and the hourly shape is
+    copied from the nearest model year (the earlier one on a tie) and rescaled
+    to that total.
+    """
 
     MODEL_YEARS: ClassVar[tuple[int, ...]] = (2021, 2025, 2030, 2035, 2040, 2045, 2050)
     WEATHER_YEARS: ClassVar[tuple[int, ...]] = (
@@ -527,13 +534,27 @@ class ReadEer(ReadStrategy):
             raise ValueError("EER demand requires scenario.planning_horizons.")
 
         years = [int(year) for year in planning_horizons]
-        invalid_years = sorted(set(years) - set(cls.MODEL_YEARS))
+        first, last = min(cls.MODEL_YEARS), max(cls.MODEL_YEARS)
+        invalid_years = sorted(year for year in set(years) if not first <= year <= last)
         if invalid_years:
             raise ValueError(
-                f"EER demand supports planning_horizons {cls.MODEL_YEARS}; "
+                f"EER demand supports planning_horizons from {first} to {last} "
+                f"(model years {cls.MODEL_YEARS}; years between them are interpolated); "
                 f"received unsupported year(s): {invalid_years}.",
             )
         return years
+
+    @classmethod
+    def _bracketing_years(cls, year: int) -> tuple[int, int]:
+        """Model years at or below and at or above ``year``."""
+        lower = max(model_year for model_year in cls.MODEL_YEARS if model_year <= year)
+        upper = min(model_year for model_year in cls.MODEL_YEARS if model_year >= year)
+        return lower, upper
+
+    @classmethod
+    def _shape_year(cls, year: int) -> int:
+        """Model year whose hourly shape ``year`` reuses: the nearest, the earlier on a tie."""
+        return min(cls.MODEL_YEARS, key=lambda model_year: (abs(model_year - year), model_year))
 
     @classmethod
     def _validate_weather_year(cls, renewable_weather_years: list[int] | None) -> int:
@@ -564,7 +585,42 @@ class ReadEer(ReadStrategy):
             sys.exit()
 
         logger.info(f"Building Load Data using EER demand for weather year {self.weather_year}")
-        return {year: self._read_model_year(year) for year in self.planning_horizons}
+        model_years = set()
+        for year in self.planning_horizons:
+            model_years.update(self._bracketing_years(year))
+            model_years.add(self._shape_year(year))
+        model_data = {year: self._read_model_year(year) for year in sorted(model_years)}
+        return {year: self._interpolate_year(model_data, year) for year in self.planning_horizons}
+
+    def _interpolate_year(self, model_data: dict[int, pd.DataFrame], year: int) -> pd.DataFrame:
+        """Profile for ``year``: nearest model year's shape scaled to the interpolated annual totals."""
+        if year in self.MODEL_YEARS:
+            return model_data[year]
+
+        lower, upper = self._bracketing_years(year)
+        shape_year = self._shape_year(year)
+        lower_total = model_data[lower].sum()
+        upper_total = model_data[upper].sum()
+        target_total = lower_total + (upper_total - lower_total) * (year - lower) / (upper - lower)
+
+        shape = model_data[shape_year]
+        shape_total = shape.sum()
+        if ((shape_total == 0) & (target_total != 0)).any():
+            raise ValueError(
+                f"EER demand cannot scale the {shape_year} profile to {year}: "
+                "a state has zero demand in the shape year but not in the interpolated total.",
+            )
+        logger.info(
+            f"EER demand for {year}: annual totals interpolated between {lower} and {upper}, "
+            f"hourly shape from {shape_year}",
+        )
+        scaled = shape.mul(target_total.div(shape_total).fillna(0.0))
+        scaled.index = pd.date_range(
+            f"{year}-01-01 00:00:00",
+            periods=self.HOURS_PER_YEAR,
+            freq="h",
+        )
+        return scaled
 
     def _read_model_year(self, model_year: int) -> pd.DataFrame:
         """Read one model year and select the configured weather-year segment."""

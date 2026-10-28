@@ -24,6 +24,11 @@ historical weather year, so `renewable_weather_years` must contain exactly one y
 2007-2013 or 2016-2023. EER timestamps are fixed CST (UTC−6, no daylight saving) and are
 rolled forward 6 hours.
 
+Any planning horizon from 2021 to 2050 can be used with EER. For a year between two model years,
+each state's annual demand is linearly interpolated between the bracketing model years, and the
+hourly shape is copied from the nearest model year (the earlier one on a tie) and rescaled to that
+annual total. For example, 2022 and 2023 take the 2021 shape, while 2024 takes the 2025 shape.
+
 (servm-demand)=
 ### CPUC SERVM (California)
 
@@ -178,9 +183,9 @@ horizons setting, and the electricity demand setting. If conducting historical s
 user must select a planning horizon in the past (2018-2023) and set `profile: eia`.
 
 If conducting forward-looking planning cases the user must set a future planning horizon —
-2030, 2040, or 2050 with `profile: efs`; any of 2021, 2025, 2030, 2035, 2040, 2045, and
-2050 with `profile: eer`; or any of 2026, 2028, 2030, 2032, 2035, 2037, 2040, 2042, and 2045
-with `profile: servm` (California only).
+2030, 2040, or 2050 with `profile: efs`; any year from 2021 to 2050 with `profile: eer`
+(years between the EER model years are interpolated, see above); or any of 2026, 2028, 2030,
+2032, 2035, 2037, 2040, 2042, and 2045 with `profile: servm` (California only).
 
 For planning horizons between the EFS data years, PyPSA-USA implements a scaling factor that
 interpolates between future years or scales historical demand using forecasts from the Annual
