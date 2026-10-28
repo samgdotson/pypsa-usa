@@ -270,7 +270,10 @@ def clustering_for_n_clusters(
         "load_weight": "sum",
         "LAF_state": "sum",
         "rec_trading_zone": "first",
+        # Saved before topology aggregation; regions differ within an aggregated zone
+        "original_state": "first",
         "original_reeds_zone": "first",
+        "original_county": "first",
     }
     clustering = get_clustering_from_busmap(
         n,
