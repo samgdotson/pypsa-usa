@@ -559,6 +559,11 @@ def main(snakemake):
     gdf_bus = map_bus_to_region(gdf_bus, reeds_shape, ["reeds_zone", "reeds_ba"])
     gdf_bus = map_bus_to_region(gdf_bus, county_shape, ["county"])
 
+    # Removing few duplicated shapes where GIS shapes were overlapping. TODO: Fix GIS shapes
+    # Must run before the load weights: assign_load_weight reindexes on the bus ids,
+    # and a bus matched by two overlapping shapes would otherwise appear twice.
+    gdf_bus = gdf_bus.reset_index().drop_duplicates(subset="bus_id", keep="first").set_index("bus_id")
+
     # assign load allocation factors to buses for state level dissagregation
     gdf_bus = assign_missing_state_regions(gdf_bus)
 
@@ -583,9 +588,6 @@ def main(snakemake):
     group_sums = gdf_bus.groupby("full_state")["load_weight"].transform("sum")
     gdf_bus["LAF_state"] = gdf_bus["load_weight"] / group_sums
     gdf_bus = gdf_bus.drop(columns=["full_state"])
-
-    # Removing few duplicated shapes where GIS shapes were overlapping. TODO: Fix GIS shapes
-    gdf_bus = gdf_bus.reset_index().drop_duplicates(subset="bus_id", keep="first").set_index("bus_id")
 
     # add buses, transformers, lines and links
     n = add_buses_from_file(n, gdf_bus, interconnect=interconnect)

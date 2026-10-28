@@ -71,6 +71,42 @@ def test_county_missing_from_census_gets_zero(county_population):
     assert weight["b2"] == 0.0
 
 
+def test_overlapping_shapes_need_dedupe_before_weights(county_population):
+    """A bus inside two overlapping county shapes is duplicated by the sjoin.
+
+    build_base_network must drop the duplicate bus ids before assign_load_weight,
+    which reindexes on them (eastern interconnect crash, "cannot reindex on an
+    axis with duplicate labels"). The crash also needs a county-less bus (b3,
+    e.g. offshore): otherwise the reindex target equals the index and pandas
+    skips the reindex.
+    """
+    gpd = pytest.importorskip("geopandas")
+    from build_base_network import map_bus_to_region
+    from shapely.geometry import Point, box
+
+    buses = gpd.GeoDataFrame(
+        {"sub_id": [1, 2, 3]},
+        index=pd.Index(["b1", "b2", "b3"], name="bus_id"),
+        geometry=[Point(0.5, 0.5), Point(1.5, 0.5), Point(5, 5)],
+        crs="EPSG:4326",
+    )
+    counties = gpd.GeoDataFrame(
+        {"county": ["p06001", "p06037"]},
+        geometry=[box(0, 0, 1, 1), box(0.4, 0, 2, 1)],  # b1 falls in both
+        crs="EPSG:4326",
+    )
+    gdf_bus = map_bus_to_region(buses, counties, ["county"])
+    assert gdf_bus.index.duplicated().any()
+    with pytest.raises(ValueError, match="duplicate labels"):
+        assign_load_weight(gdf_bus, county_population)
+
+    gdf_bus = gdf_bus.reset_index().drop_duplicates(subset="bus_id", keep="first").set_index("bus_id")
+    weight = assign_load_weight(gdf_bus, county_population)
+    assert list(weight.index) == ["b1", "b2", "b3"]
+    assert (weight[["b1", "b2"]] > 0).all()
+    assert weight["b3"] == 0.0
+
+
 def test_load_county_population_parses_census_export(tmp_path):
     """Round-trip the data.census.gov P1 export format (two header rows)."""
     csv = tmp_path / "DECENNIALDHC2020.P1-Data.csv"
