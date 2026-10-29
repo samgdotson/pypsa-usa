@@ -394,6 +394,26 @@ def complete_atb_slice(pudl_atb_year: pd.DataFrame, atb_scenario: str, atb_model
     return sub
 
 
+def egs_costs_for_year(egs_costs: pd.DataFrame, year: int) -> pd.DataFrame:
+    """EGS cost rows for ``year`` from the tabulated investment horizons.
+
+    The table only covers a few horizons (2030, 2040, 2050). Years between two
+    horizons are interpolated linearly; years outside the table take the nearest one.
+    """
+    wide = egs_costs.set_index(["pypsa-name", "parameter", "investment_horizon"])["value"].unstack(
+        "investment_horizon",
+    )
+    horizons = sorted(wide.columns)
+    year = min(max(year, horizons[0]), horizons[-1])
+    lower = max(h for h in horizons if h <= year)
+    upper = min(h for h in horizons if h >= year)
+    if lower == upper:
+        values = wide[lower]
+    else:
+        values = wide[lower] + (wide[upper] - wide[lower]) * (year - lower) / (upper - lower)
+    return values.rename("value").reset_index()
+
+
 def process_atb_scenario(pudl_atb_sub: pd.DataFrame, aeo: pd.DataFrame) -> pd.DataFrame:
     """Run the full cost pipeline for one (atb_scenario, model_case) slice.
 
@@ -596,10 +616,7 @@ if __name__ == "__main__":
     pudl_atb = pd.concat(scenario_results, ignore_index=True)
 
     # EGS costs do not vary with ATB scenario; tag as NA so the loader applies them universally
-    egs_costs = pd.read_csv(snakemake.input.egs_costs)
-    egs_costs = egs_costs.query("investment_horizon == @tech_year").drop(
-        columns="investment_horizon",
-    )
+    egs_costs = egs_costs_for_year(pd.read_csv(snakemake.input.egs_costs), tech_year)
     egs_costs["atb_scenario"] = pd.NA
     egs_costs["atb_model_case"] = pd.NA
     pudl_atb = pd.concat([pudl_atb, egs_costs], ignore_index=True)
