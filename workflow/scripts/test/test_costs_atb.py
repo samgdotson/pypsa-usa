@@ -17,7 +17,7 @@ import pytest
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 from _helpers import load_costs
-from build_cost_data import complete_atb_slice
+from build_cost_data import complete_atb_slice, select_atb_projection_year
 
 pytestmark = pytest.mark.fast
 
@@ -101,3 +101,22 @@ def test_load_costs_applies_per_carrier_overrides(tech_costs):
 def test_load_costs_rejects_a_slice_the_table_does_not_carry(tech_costs, atb_cfg):
     with pytest.raises(ValueError, match="Market"):
         load_costs(tech_costs, {"atb": atb_cfg})
+
+
+ATB_YEARS = pd.DataFrame(
+    [("solar", y, 1000.0 - y) for y in range(2023, 2061)]
+    + [(c, y, 9000.0 - y) for c in ("nuclear", "offwind_floating") for y in range(2030, 2061)],
+    columns=["pypsa-name", "projection_year", "capex_per_kw"],
+)
+
+
+@pytest.mark.parametrize("year", [2025, 2029, 2030, 2035])
+def test_projection_year_takes_each_carriers_nearest_published_year(year):
+    sub = select_atb_projection_year(ATB_YEARS, year).set_index("pypsa-name")
+    assert sub.at["solar", "projection_year"] == year
+    assert sub.at["nuclear", "projection_year"] == max(year, 2030)
+    assert sub.at["offwind_floating", "projection_year"] == max(year, 2030)
+
+
+def test_projection_year_keeps_every_carrier():
+    assert set(select_atb_projection_year(ATB_YEARS, 2025)["pypsa-name"]) == {"solar", "nuclear", "offwind_floating"}

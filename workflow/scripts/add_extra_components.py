@@ -354,6 +354,11 @@ def split_retirement_gens(
     apply_new_build_parameters(n, retirement_gens, retirement_gens.index, costs)
 
 
+def available_in_year(gens: pd.DataFrame, min_years: dict, investment_year: int) -> pd.DataFrame:
+    """Generators whose carrier is commercially available (``costs.min_year``) in ``investment_year``."""
+    return gens[gens.carrier.map(lambda c: min_years.get(c, 0) <= investment_year)]
+
+
 def attach_multihorizon_existing_generators(
     n: pypsa.Network,
     costs: dict,
@@ -1216,13 +1221,15 @@ def main(snakemake) -> None:
         ),
     )
 
+    min_years = snakemake.config["costs"].get("min_year") or {}
+
     for investment_year in n.investment_periods:
         costs = costs_dict[investment_year]
         attach_storageunits(n, costs, elec_config, investment_year)
         attach_multihorizon_existing_generators(
             n,
             costs,
-            multi_horizon_gens,
+            available_in_year(multi_horizon_gens, min_years, investment_year),
             investment_year,
         )
         attach_multihorizon_egs(n, costs, costs_dict, egs_gens, investment_year)

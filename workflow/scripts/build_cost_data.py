@@ -394,6 +394,24 @@ def complete_atb_slice(pudl_atb_year: pd.DataFrame, atb_scenario: str, atb_model
     return sub
 
 
+def select_atb_projection_year(pudl_atb: pd.DataFrame, tech_year: int) -> pd.DataFrame:
+    """ATB rows for ``tech_year``, per carrier, from its nearest published projection year.
+
+    ATB starts some technologies later than others (nuclear, SMR and floating offshore
+    wind are published from 2030). A carrier without rows for ``tech_year`` would still
+    get a row from the static lifetime and fuel data and reach ``load_costs`` with its
+    capex and fixed O&M zero-filled, so it takes its nearest published year instead.
+    """
+    frames = []
+    for carrier, rows in pudl_atb.groupby("pypsa-name"):
+        published = rows.projection_year.unique()
+        year = min(published, key=lambda y: (abs(y - tech_year), y))
+        if year != tech_year:
+            logger.warning(f"No ATB data for {carrier} in {tech_year}; using {year}.")
+        frames.append(rows[rows.projection_year == year])
+    return pd.concat(frames, ignore_index=True)
+
+
 def egs_costs_for_year(egs_costs: pd.DataFrame, year: int) -> pd.DataFrame:
     """EGS cost rows for ``year`` from the tabulated investment horizons.
 
@@ -569,21 +587,8 @@ if __name__ == "__main__":
         .reset_index(drop=True)
     )
 
-    # Filter to the requested projection year (with 2030 fallback for offwind_floating)
-    pudl_atb_filt = pudl_atb[pudl_atb.projection_year == tech_year]
-    if tech_year < 2030:
-        logger.warning(
-            "Using 2030 ATB data for offwind_floating; earlier data not available.",
-        )
-        pudl_atb_offwind_floating = pudl_atb[
-            (pudl_atb["pypsa-name"] == "offwind_floating") & (pudl_atb.projection_year == 2030)
-        ]
-        pudl_atb_year = pd.concat(
-            [pudl_atb_filt, pudl_atb_offwind_floating],
-            ignore_index=True,
-        )
-    else:
-        pudl_atb_year = pudl_atb_filt
+    # Filter to the requested projection year (nearest published year where ATB has none)
+    pudl_atb_year = select_atb_projection_year(pudl_atb, tech_year)
 
     # Build AEO fuel cost data once — independent of ATB scenario / case
     aeo = build_aeo_fuel_costs(

@@ -259,3 +259,9 @@ def test_zscore_filter_keeps_generators_without_spread():
 
     assert kept.groupby("generator_name").size().to_dict() == {"flat": 3, "single": 1, "spread": 11}
     assert kept.fuel_cost_per_mwh.max() == 20.0
+
+
+@pytest.mark.parametrize(("year", "expected"), [(2025, ["gas2"]), (2030, ["gas2", "nuc1"])])
+def test_min_year_holds_back_expansion_at_existing_sites(year, expected):
+    gens = pd.DataFrame({"carrier": ["gas", "nuclear"]}, index=["gas2", "nuc1"])
+    assert aec.available_in_year(gens, {"nuclear": 2030}, year).index.tolist() == expected
